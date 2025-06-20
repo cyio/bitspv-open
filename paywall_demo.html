@@ -10,17 +10,14 @@
         <h1>Premium Article Title</h1>
         <p>This is an article about the latest developments in the Bitcoin SV ecosystem. Some content requires payment to read.</p>
 
-        <div id="paidContent" class="content-blurred">
+        <div id="paidContent" class="paywall-content content-blurred">
             <h2>Premium Content Area</h2>
-            <p>Bitcoin SV (BSV) blockchain has made significant progress in 2024, especially in enterprise applications and large-scale data processing. With the stability of the protocol and continuous improvement of scalability, more and more developers and enterprises are beginning to explore innovative solutions based on BSV.</p>
-            <p>One of the highlights is its application in the field of micropayments. BSV's low transaction fees and high throughput make it an ideal choice for implementing "pay-per-use" or "pay-per-data" models. For example, content creators can set extremely low payment thresholds for each article, video segment, or song, thereby achieving new business models.</p>
-            <p>In addition, BSV also shows great potential in data integrity and traceability. By writing data directly to the blockchain, data immutability can be ensured, which is crucial for supply chain management, copyright protection, and digital identity verification.</p>
-            <p>In the future, with the improvement of more infrastructure and the maturity of developer tools, BSV is expected to play an increasingly important role in the digital economy, promoting the popularization of true peer-to-peer electronic cash systems.</p>
+            <p>Bitcoin SV (BSV) blockchain has made significant progress in 2024, especially in enterprise applications and micropayments. BSV's low transaction fees and high throughput make it ideal for "pay-per-use" models.</p>
             <p>Thank you for your payment, you can now read the complete content!</p>
         </div>
 
-        <button id="payButton" class="pay-button">Pay to Read (1 satoshi)</button>
-        <div id="statusMessage" class="status-message"></div>
+        <button id="payButton" class="btn">Pay to Read (1 satoshi)</button>
+        <div id="statusMessage" class="status"></div>
         <!-- <a href="http://localhost:5175" target="_blank" class="link-opener">Open Payment Service</a> -->
     </div>
 
@@ -566,8 +563,6 @@
         }
 
         .paywall-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
             padding: 40px;
             border-radius: 10px;
             text-align: center;
@@ -642,6 +637,13 @@
             padding-top: 20px;
             border-top: 1px solid #ddd;
             color: #666;
+        }
+
+        .content-blurred {
+            filter: blur(3px);
+            pointer-events: none;
+            user-select: none;
+            opacity: 0.7;
         }
 
         @media (max-width: 600px) {
