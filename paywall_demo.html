@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paywall MPV Demo</title>
+</head>
+<body>
+    <div class="container">
+        <h1>Premium Article Title</h1>
+        <p>This is an article about the latest developments in the Bitcoin SV ecosystem. Some content requires payment to read.</p>
+
+        <div id="paidContent" class="content-blurred">
+            <h2>Premium Content Area</h2>
+            <p>Bitcoin SV (BSV) blockchain has made significant progress in 2024, especially in enterprise applications and large-scale data processing. With the stability of the protocol and continuous improvement of scalability, more and more developers and enterprises are beginning to explore innovative solutions based on BSV.</p>
+            <p>One of the highlights is its application in the field of micropayments. BSV's low transaction fees and high throughput make it an ideal choice for implementing "pay-per-use" or "pay-per-data" models. For example, content creators can set extremely low payment thresholds for each article, video segment, or song, thereby achieving new business models.</p>
+            <p>In addition, BSV also shows great potential in data integrity and traceability. By writing data directly to the blockchain, data immutability can be ensured, which is crucial for supply chain management, copyright protection, and digital identity verification.</p>
+            <p>In the future, with the improvement of more infrastructure and the maturity of developer tools, BSV is expected to play an increasingly important role in the digital economy, promoting the popularization of true peer-to-peer electronic cash systems.</p>
+            <p>Thank you for your payment, you can now read the complete content!</p>
+        </div>
+
+        <button id="payButton" class="pay-button">Pay to Read (1 satoshi)</button>
+        <div id="statusMessage" class="status-message"></div>
+        <!-- <a href="http://localhost:5175" target="_blank" class="link-opener">Open Payment Service</a> -->
+    </div>
+
+    <script>
+        // demo tx https://whatsonchain.com/tx/5334dd32c3ffbaf2759b9ef5eeac0262e2b7d366cc64a6d39b94b108575d086d
+        const PAY_BASE_URL = 'https://pay.bitspv.com'; // Payment service base URL
+        // const PAY_BASE_URL = 'http://localhost:5175'; // Payment service base URL
+        const PAID_CONTENT_KEY = 'mpv_demo_paid_txid';
+        const PAID_ORDER_ID_KEY = 'mpv_demo_order_id';
+        const PAID_TX_DETAILS_KEY = 'mpv_demo_tx_details'; // Store complete transaction details
+        const VALIDITY_DAYS = 3; // Valid for 3 days
+
+        const paidContentDiv = document.getElementById('paidContent');
+        const payButton = document.getElementById('payButton');
+        const statusMessageDiv = document.getElementById('statusMessage');
+
+        // Real blockchain query function
+        async function fetchTransactionDetails(txid) {
+            console.log(`Querying transaction details: ${txid}`);
+            const WHATS_ON_CHAIN_TX_API = 'https://api.whatsonchain.com/v1/bsv/main/tx/hash'; // Using WhatsOnChain single transaction query API
+
+            try {
+                const response = await fetch(`${WHATS_ON_CHAIN_TX_API}/${txid}`);
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(
+                        `Unable to get transaction details: ${response.status} ${response.statusText} ` +
+                        JSON.stringify(errorData)
+                    );
+                }
+                const data = await response.json();
+
+                // Extract OP_RETURN data
+                const opReturns = data.vout
+                    .filter(output => output.value === 0 && output.scriptPubKey?.type === 'nulldata')
+                    .map(output => output.scriptPubKey.asm.replace('OP_RETURN ', '')); // Extract data after OP_RETURN
+
+                // Extract transaction timestamp (Unix timestamp in seconds, convert to milliseconds)
+                const timestamp = data.blocktime ? data.blocktime * 1000 : +new Date();
+
+                return {
+                    txid: txid,
+                    op_returns: opReturns,
+                    timestamp: timestamp
+                };
+            } catch (error) {
+                console.error('Failed to get transaction details:', error);
+                throw new Error(`Failed to get transaction details: ${error.message}`);
+            }
+        }
+
+        // Helper function: convert string to hexadecimal
+        function stringToHex(str) {
+            return Array.from(str).map(char => char.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+        }
+
+        // Generate UUID
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Display status information
+        function showStatus(message, isSuccess = false) {
+            statusMessageDiv.textContent = message;
+            statusMessageDiv.className = 'status-message show';
+            if (isSuccess) {
+                statusMessageDiv.classList.add('success');
+            } else {
+                statusMessageDiv.classList.remove('success');
+            }
+        }
+
+        // Unified payment verification logic
+        async function performPaymentVerification(txid, expectedOrderId, transactionDetails = null) {
+            if (!txid || !expectedOrderId) {
+                throw new Error('Missing transaction ID or order ID for verification.');
+            }
+
+            let details = transactionDetails;
+            if (!details) {
+                details = await fetchTransactionDetails(txid);
+            }
+
+            if (!details) {
+                throw new Error('Unable to get transaction details.');
+            }
+
+            const expectedOpReturnPrefix = stringToHex(`MPV_DEMO_PAYMENT_${expectedOrderId}`);
+            const opReturnData = details.op_returns.join('');
+
+            if (!opReturnData.includes(expectedOpReturnPrefix)) {
+                throw new Error('OP_RETURN data mismatch, payment verification failed.');
+            }
+
+            const transactionTimestamp = details.timestamp;
+            const now = Date.now();
+            const expiryTime = transactionTimestamp + (VALIDITY_DAYS * 24 * 60 * 60 * 1000);
+
+            if (now > expiryTime) {
+                throw new Error(`Payment has expired. Valid for ${VALIDITY_DAYS} days.`);
+            }
+
+            // Verification successful, store complete transaction details
+            localStorage.setItem(PAID_CONTENT_KEY, txid); // Still keep txid identifier
+            localStorage.setItem(PAID_TX_DETAILS_KEY, JSON.stringify(details)); // Store complete details
+
+            paidContentDiv.classList.remove('content-blurred');
+            payButton.style.display = 'none';
+            showStatus('Payment verification successful! You can now read the complete content.', true);
+            console.log('Payment successful, transaction ID:', txid);
+        }
+
+        // Handle payment results and verification
+        async function checkPaymentStatus() {
+            // debugger
+            const urlParams = new URLSearchParams(window.location.search);
+            const txidFromUrl = urlParams.get('data'); // Get txid from URL
+            const statusFromUrl = urlParams.get('status'); // Get payment status from URL
+
+            let currentTxid = localStorage.getItem(PAID_CONTENT_KEY);
+            let currentOrderId = localStorage.getItem(PAID_ORDER_ID_KEY);
+
+            let cachedTxDetails = null;
+            try {
+                const cachedData = localStorage.getItem(PAID_TX_DETAILS_KEY);
+                if (cachedData) {
+                    cachedTxDetails = JSON.parse(cachedData);
+                }
+            } catch (e) {
+                console.error('Failed to parse cached transaction details:', e);
+                localStorage.removeItem(PAID_TX_DETAILS_KEY); // Clear invalid cache
+            }
+
+            // Clear payment callback parameters from URL to keep page clean
+            if (txidFromUrl || statusFromUrl) {
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.delete('data');
+                newUrl.searchParams.delete('status');
+                history.replaceState({}, document.title, newUrl.toString());
+            }
+
+            if (statusFromUrl === 'error') {
+                showStatus('Payment failed or cancelled. Please try again.');
+                return;
+            }
+
+            // Prioritize processing txid from URL
+            if (txidFromUrl) {
+                try {
+                    await performPaymentVerification(txidFromUrl, localStorage.getItem(PAID_ORDER_ID_KEY));
+                } catch (error) {
+                    console.error('Payment verification failed:', error);
+                    showStatus(`Payment verification failed: ${error.message}`);
+                    // Clear possible old state
+                    localStorage.removeItem(PAID_CONTENT_KEY);
+                    localStorage.removeItem(PAID_ORDER_ID_KEY);
+                    localStorage.removeItem(PAID_TX_DETAILS_KEY); // Clear transaction details cache
+                    paidContentDiv.classList.add('content-blurred');
+                    payButton.style.display = 'block';
+                }
+            } else if (currentTxid && currentOrderId && cachedTxDetails && cachedTxDetails.txid === currentTxid) {
+                // If there's no txid in URL, but localStorage has valid cached transaction details
+                try {
+                    // Use cached transaction details for verification, avoiding network requests
+                    await performPaymentVerification(currentTxid, currentOrderId, cachedTxDetails);
+                } catch (error) {
+                    console.error('Cached payment verification failed:', error);
+                    showStatus(`Cached payment verification failed: ${error.message}`);
+                    // Clear possible old state
+                    localStorage.removeItem(PAID_CONTENT_KEY);
+                    localStorage.removeItem(PAID_ORDER_ID_KEY);
+                    localStorage.removeItem(PAID_TX_DETAILS_KEY); // Clear transaction details cache
+                    paidContentDiv.classList.add('content-blurred');
+                    payButton.style.display = 'block';
+                }
+            } else if (currentTxid && currentOrderId) {
+                // If localStorage has txid and orderId, but no valid cache or cache mismatch, force network verification
+                try {
+                    await performPaymentVerification(currentTxid, currentOrderId);
+                } catch (error) {
+                    console.error('localStorage payment verification failed:', error);
+                    showStatus(`localStorage payment verification failed: ${error.message}`);
+                    // Clear possible old state
+                    localStorage.removeItem(PAID_CONTENT_KEY);
+                    localStorage.removeItem(PAID_ORDER_ID_KEY);
+                    localStorage.removeItem(PAID_TX_DETAILS_KEY); // Clear transaction details cache
+                    paidContentDiv.classList.add('content-blurred');
+                    payButton.style.display = 'block';
+                }
+            } else {
+                // Unpaid state
+                paidContentDiv.classList.add('content-blurred');
+                payButton.style.display = 'block';
+                showStatus('Please pay to read the complete content.');
+            }
+        }
+
+        // Store payment window reference
+        let paymentWindow = null;
+        let paymentCheckInterval = null;
+
+        // Call payment - new tab method
+        function redirectToPay() {
+            // Generate unique orderId and store it for verification after successful payment
+            const orderId = generateUUID();
+            localStorage.setItem(PAID_ORDER_ID_KEY, orderId);
+
+            // Note: Buffer may need polyfill or other methods in browser environment
+            // For DEMO simplicity, use string directly, in actual applications ensure data is hexadecimal string
+            const bData = [`MPV_DEMO_PAYMENT_${orderId}`]; // Identifier containing orderId
+
+            const paymentParams = [
+                {
+                    data: bData.map(d => {
+                        // Simple string to hexadecimal conversion, no complex encoding
+                        return Array.from(d).map(char => char.charCodeAt(0).toString(16)).join('');
+                    }),
+                    satoshis: 0,
+                },
+                {
+                    address: '1FNPZsXQPPSf2Q4nrPyiCop4iwPMsTwYAc', // Example address, please replace with your actual receiving address
+                    satoshis: 1, // Minimum payment amount
+                },
+            ];
+
+            const encodedData = encodeURIComponent(JSON.stringify(paymentParams));
+            const callbackUrl = encodeURIComponent(window.location.href.split('?')[0]); // Current page URL as callback address, removing query parameters
+
+            // Use window.open to open payment page in new tab
+            try {
+                const windowFeatures = 'width=500,height=580,scrollbars=yes,resizable=yes'
+                paymentWindow = window.open(
+                    `${PAY_BASE_URL}/?mode=popup&callbackUrl=${callbackUrl}#${encodedData}`,
+                    '_blank', windowFeatures
+                );
+                // console.log('paymentWindow: ', paymentWindow);
+                
+                if (!paymentWindow) {
+                    // If popup is blocked, prompt user and fallback to redirect mode
+                    showStatus('Browser blocked popup, please allow popups and try again, or we will redirect you to payment page.');
+                    setTimeout(() => {
+                        window.location.href = `${PAY_BASE_URL}/?mode=redirect&callbackUrl=${callbackUrl}#${encodedData}`;
+                    }, 3000);
+                    return;
+                }
+                
+                showStatus('Payment window opened, please complete payment in the new window...');
+                
+                // Set timer to check payment window status
+                paymentCheckInterval = setInterval(() => {
+                    try {
+                        // Check if payment window is closed
+                        if (paymentWindow.closed) {
+                            clearInterval(paymentCheckInterval);
+                            paymentWindow = null;
+                            showStatus('Payment window closed, checking payment status...');
+                            // Check payment status after payment window is closed
+                            setTimeout(() => {
+                                checkPaymentStatus();
+                            }, 1000);
+                        }
+                    } catch (e) {
+                        // Handle cross-origin access errors
+                        console.log('Cross-origin error when checking payment window status, this is normal');
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Failed to open payment window:', error);
+                showStatus('Failed to open payment window, will redirect you to payment page.');
+                // Fallback to redirect mode
+                setTimeout(() => {
+                    window.location.href = `${PAY_BASE_URL}/?mode=redirect&callbackUrl=${callbackUrl}#${encodedData}`;
+                }, 2000);
+            }
+        }
+
+        // 处理来自支付窗口的消息
+        function handlePaymentMessage(event) {
+            console.log('handlePaymentMessage called with event:', event);
+            // Verify message source to ensure security (supports local development environment)
+            const allowedOrigins = [
+                PAY_BASE_URL,
+            ];
+            
+            if (!allowedOrigins.includes(event.origin)) {
+                console.warn('Received message from unknown source:', event.origin);
+                return;
+            }
+            
+            console.log('Received payment window message:', event.data);
+            
+            try {
+                const messageData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                
+                // Compatible with bitspv-pay project message format: type: 'payment_success', payload: { txid: data }
+                if (messageData.type === 'payment_success') {
+                    // Handle payment success
+                    const txid = messageData.payload.txid;
+                    console.log('Payment successful, transaction ID:', txid);
+                    showStatus('Received payment success message, verifying...');
+                    
+                    // Send confirmation message to child window
+                    if (paymentWindow && !paymentWindow.closed) {
+                        paymentWindow.postMessage({
+                            type: 'message_received'
+                        }, '*');
+                    }
+                    
+                    // Clear window check timer
+                    if (paymentCheckInterval) {
+                        clearInterval(paymentCheckInterval);
+                        paymentCheckInterval = null;
+                    }
+                    
+                    // Delay closing payment window to give child window time to process confirmation message
+                    setTimeout(() => {
+                        if (paymentWindow && !paymentWindow.closed) {
+                            paymentWindow.close();
+                            paymentWindow = null;
+                        }
+                    }, 200);
+                    
+                    // Verify payment
+                    performPaymentVerification(txid, localStorage.getItem(PAID_ORDER_ID_KEY))
+                        .catch(error => {
+                            console.error('Payment verification failed:', error);
+                            showStatus(`Payment verification failed: ${error.message}`);
+                        });
+                        
+                } else if (messageData.type === 'payment_error') {
+                    // Handle payment error
+                    console.error('Payment failed:', messageData.error);
+                    showStatus(`Payment failed: ${messageData.error || 'Unknown error'}`);
+                    
+                    // Clear window check timer
+                    if (paymentCheckInterval) {
+                        clearInterval(paymentCheckInterval);
+                        paymentCheckInterval = null;
+                    }
+                    
+                    // Close payment window
+                    if (paymentWindow && !paymentWindow.closed) {
+                        paymentWindow.close();
+                        paymentWindow = null;
+                    }
+                    
+                } else if (messageData.type === 'payment_cancelled') {
+                    // Handle payment cancellation
+                    console.log('User cancelled payment');
+                    showStatus('Payment cancelled');
+                    
+                    // Clear window check timer
+                    if (paymentCheckInterval) {
+                        clearInterval(paymentCheckInterval);
+                        paymentCheckInterval = null;
+                    }
+                    
+                    // Close payment window
+                    if (paymentWindow && !paymentWindow.closed) {
+                        paymentWindow.close();
+                        paymentWindow = null;
+                    }
+                    
+                } else if (messageData.type === 'payment_ready') {
+                    // Payment page is ready
+                    console.log('Payment page is ready');
+                    showStatus('Payment page loaded, please complete payment...');
+                    
+                } else {
+                    console.log('Received unknown message type:', messageData);
+                }
+                
+            } catch (error) {
+                console.error('Failed to parse payment message:', error);
+            }
+        }
+        
+        // Cleanup function
+        function cleanupPaymentProcess() {
+            if (paymentCheckInterval) {
+                clearInterval(paymentCheckInterval);
+                paymentCheckInterval = null;
+            }
+            if (paymentWindow && !paymentWindow.closed) {
+                paymentWindow.close();
+                paymentWindow = null;
+            }
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', cleanupPaymentProcess);
+        
+        // Execute on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set up message listener
+            window.addEventListener('message', handlePaymentMessage, false);
+            
+            // Bind payment button event
+            payButton.addEventListener('click', redirectToPay);
+            
+            // Check payment status (handle page refresh or direct access)
+            checkPaymentStatus();
+        });
+
+        // Simple Buffer.from polyfill for browser environment if needed
+        // In actual projects, a more robust solution may be needed, such as importing the 'buffer' library
+        if (typeof Buffer === 'undefined') {
+            window.Buffer = {
+                from: (str) => {
+                    const buf = new Uint8Array(str.length);
+                    for (let i = 0; i < str.length; i++) {
+                        buf[i] = str.charCodeAt(i);
+                    }
+                    return {
+                        toString: (encoding) => {
+                            if (encoding === 'hex') {
+                                return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+                            }
+                            return new TextDecoder().decode(buf);
+                        }
+                    };
+                }
+            };
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 10px;
+        }
+
+        .demo-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+
+        .demo-section h2 {
+            color: #007bff;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .demo-section p {
+            margin-bottom: 15px;
+            color: #666;
+        }
+
+        .btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+
+        .highlight {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+        }
+
+        .paywall-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .paywall-content h2 {
+            margin-top: 0;
+            font-size: 2em;
+        }
+
+        .paywall-content p {
+            font-size: 1.2em;
+            margin: 20px 0;
+        }
+
+        .premium-feature {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            backdrop-filter: blur(10px);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .payment-methods {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .payment-method {
+            flex: 1;
+            min-width: 200px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .payment-method:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+
+        .payment-method.selected {
+            border-color: #007bff;
+            background-color: #e3f2fd;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                padding: 20px;
+            }
+            
+            .payment-methods {
+                flex-direction: column;
+            }
+            
+            .payment-method {
+                min-width: auto;
+            }
+        }
+    </style>
+</body>
+</html>
