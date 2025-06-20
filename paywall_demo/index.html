@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Paywall MPV Demo</title>
+    <title>Paywall Demo</title>
 </head>
 <body>
     <div class="container">
@@ -25,9 +25,9 @@
         // demo tx https://whatsonchain.com/tx/5334dd32c3ffbaf2759b9ef5eeac0262e2b7d366cc64a6d39b94b108575d086d
         const PAY_BASE_URL = 'https://pay.bitspv.com'; // Payment service base URL
         // const PAY_BASE_URL = 'http://localhost:5175'; // Payment service base URL
-        const PAID_CONTENT_KEY = 'mpv_demo_paid_txid';
-        const PAID_ORDER_ID_KEY = 'mpv_demo_order_id';
-        const PAID_TX_DETAILS_KEY = 'mpv_demo_tx_details'; // Store complete transaction details
+        const PAID_CONTENT_KEY = 'paywall_demo_paid_txid';
+        const PAID_ORDER_ID_KEY = 'paywall_demo_order_id';
+        const PAID_TX_DETAILS_KEY = 'paywall_demo_tx_details'; // Store complete transaction details
         const VALIDITY_DAYS = 3; // Valid for 3 days
 
         const paidContentDiv = document.getElementById('paidContent');
@@ -108,7 +108,7 @@
                 throw new Error('Unable to get transaction details.');
             }
 
-            const expectedOpReturnPrefix = stringToHex(`MPV_DEMO_PAYMENT_${expectedOrderId}`);
+            const expectedOpReturnPrefix = stringToHex(`PAYWALL_DEMO_PAYMENT_${expectedOrderId}`);
             const opReturnData = details.op_returns.join('');
 
             if (!opReturnData.includes(expectedOpReturnPrefix)) {
@@ -230,7 +230,7 @@
 
             // Note: Buffer may need polyfill or other methods in browser environment
             // For DEMO simplicity, use string directly, in actual applications ensure data is hexadecimal string
-            const bData = [`MPV_DEMO_PAYMENT_${orderId}`]; // Identifier containing orderId
+            const bData = [`PAYWALL_DEMO_PAYMENT_${orderId}`]; // Identifier containing orderId
 
             const paymentParams = [
                 {
